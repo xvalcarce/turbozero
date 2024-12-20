@@ -25,10 +25,11 @@ class ResidualBlock(nn.Module):
     - `channels`: number of channels"""
     channels: int
     momentum: float
+    kernel_size: int
 
     @nn.compact
     def __call__(self, x, train: bool):
-        y = nn.Conv(features=self.channels, kernel_size=(self.kernel_size,self.kernel_sizel), strides=(1,1), padding='SAME', use_bias=False)(x)
+        y = nn.Conv(features=self.channels, kernel_size=(self.kernel_size,self.kernel_size), strides=(1,1), padding='SAME', use_bias=False)(x)
         y = nn.BatchNorm(momentum=self.momentum, use_running_average=not train)(y)
         y = nn.relu(y)
         y = nn.Conv(features=self.channels, kernel_size=(self.kernel_size,self.kernel_size), strides=(1,1), padding='SAME', use_bias=False)(y)
@@ -44,13 +45,13 @@ class AZResnet(nn.Module):
     @nn.compact
     def __call__(self, x, train: bool):
         # initial conv layer
-        x = nn.Conv(features=self.config.num_channels, kernel_size=(self.kernel_size,self.kernel_size), strides=(1,1), padding='SAME', use_bias=False)(x)
+        x = nn.Conv(features=self.config.num_channels, kernel_size=(self.config.kernel_size,self.config.kernel_size), strides=(1,1), padding='SAME', use_bias=False)(x)
         x = nn.BatchNorm(momentum=self.config.batch_norm_momentum, use_running_average=not train)(x)
         x = nn.relu(x)
 
         # residual blocks
         for _ in range(self.config.num_blocks):
-            x = ResidualBlock(channels=self.config.num_channels, momentum=self.config.batch_norm_momentum)(x, train=train)
+            x = ResidualBlock(channels=self.config.num_channels, momentum=self.config.batch_norm_momentum, kernel_size=self.config.kernel_size)(x, train=train)
 
         # policy head
         policy = nn.Conv(features=self.config.num_policy_channels, kernel_size=(1,1), strides=(1,1), padding='SAME', use_bias=False)(x)
