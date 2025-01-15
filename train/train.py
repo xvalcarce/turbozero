@@ -12,6 +12,7 @@ import quantum_compilation.quantumcompilation as qc
 from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.networks.aztransformer import AZResnetTransformer, AZResnetTransformerConfig
+from core.networks.azmlp import AZMLP, AZMLPConfig
 from core.evaluators.alphazero import AlphaZero
 from core.evaluators.mcts.weighted_mcts import WeightedMCTS, MCTS
 from core.evaluators.mcts.action_selection import PUCTSelector
@@ -60,24 +61,45 @@ arch = config.get("neuralnetwork", "architecture")
 if arch == "Resnet":
     network = AZResnet
     networkconfig = AZResnetConfig
+    nn = network(networkconfig(
+        policy_head_out_size=env.num_actions,
+        num_blocks=int(config["neuralnetwork"]["num_blocks"]),
+        num_channels=int(config["neuralnetwork"]["num_channels"]),
+        num_policy_channels=int(config["neuralnetwork"]["num_policy_channels"]),
+        num_value_channels=int(config["neuralnetwork"]["num_value_channels"]),
+        kernel_size=int(config["neuralnetwork"]["kernel_size"]),
+        batch_norm_momentum=config.getfloat("neuralnetwork","batch_norm_momentum"),
+    ))
 elif arch == "ResnetTransformer":
     network = AZResnetTransformer
     networkconfig = AZResnetTransformerConfig
+    nn = network(networkconfig(
+        policy_head_out_size=env.num_actions,
+        num_blocks=int(config["neuralnetwork"]["num_blocks"]),
+        num_channels=int(config["neuralnetwork"]["num_channels"]),
+        num_policy_channels=int(config["neuralnetwork"]["num_policy_channels"]),
+        num_value_channels=int(config["neuralnetwork"]["num_value_channels"]),
+        kernel_size=int(config["neuralnetwork"]["kernel_size"]),
+        batch_norm_momentum=config.getfloat("neuralnetwork","batch_norm_momentum"),
+        num_transformer_heads=config.getint("neuralnetwork","num_transformer_heads"),
+        transformer_mlp_dim=config.getint("neuralnetwork","transformer_mlp_dim"),
+        transformer_embed_dim=config.getint("neuralnetwork","transformer_embed_dim"),
+    ))
+elif arch == "MLP":
+    network = AZMLP
+    networkconfig = AZMLPConfig
+    nn = network(networkconfig(
+        policy_head_out_size=env.num_actions,
+        width = config.getint("neuralnetwork","width"),
+        depth_common = config.getint("neuralnetwork","depth_common"),
+        depth_phead = config.getint("neuralnetwork","depth_phead"),
+        depth_vhead = config.getint("neuralnetwork","depth_vhead"),
+        use_batch_norm = config.getboolean("neuralnetwork","use_batch_norm", fallback=True),
+        batch_norm_momentum = config.getfloat("neuralnetwork","batch_norm_momentum"),
+        dropout_rate = config.getfloat("neuralnetwork","dropout_rate"),
+    ))
 else:
     raise TypeError("Network not supported")
-
-nn = network(networkconfig(
-    policy_head_out_size=env.num_actions,
-    num_blocks=int(config["neuralnetwork"]["num_blocks"]),
-    num_channels=int(config["neuralnetwork"]["num_channels"]),
-    num_policy_channels=int(config["neuralnetwork"]["num_policy_channels"]),
-    num_value_channels=int(config["neuralnetwork"]["num_value_channels"]),
-    kernel_size=int(config["neuralnetwork"]["kernel_size"]),
-    batch_norm_momentum=config.getfloat("neuralnetwork","batch_norm_momentum"),
-    num_transformer_heads=config.getint("neuralnetwork","num_transformer_heads"),
-    transformer_mlp_dim=config.getint("neuralnetwork","transformer_mlp_dim"),
-    transformer_embed_dim=config.getint("neuralnetwork","transformer_embed_dim"),
-))
 
 replay_memory = EpisodeReplayBuffer(capacity=int(config["replay_memory"]["capacity"]))
 
@@ -110,7 +132,6 @@ alphazero_test = AlphaZero(MCTS)(
     discount=float(config["alphazero_evaluation"]["discount"]),
 )
 
-# initialize trainer
 # Initialize trainer
 batch_size = int(config["trainer"]["batch_size"])
 train_batch_size = int(config["trainer"]["train_batch_size"])
