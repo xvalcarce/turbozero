@@ -11,7 +11,8 @@ from core.memory.replay_memory import BaseExperience
 
 
 def az_default_loss_fn(params: chex.ArrayTree, train_state: TrainState, experience: BaseExperience, 
-                       l2_reg_lambda: float = 0.0001) -> Tuple[chex.Array, Tuple[chex.ArrayTree, optax.OptState]]:
+                       l2_reg_lambda: float = 0.0001, 
+                       dropout_key: jax.random.PRNGKey = jax.random.key(seed=0)) -> Tuple[chex.Array, Tuple[chex.ArrayTree, optax.OptState]]:
     """ Implements the default AlphaZero loss function.
     
     = Policy Loss + Value Loss + L2 Regularization
@@ -24,6 +25,7 @@ def az_default_loss_fn(params: chex.ArrayTree, train_state: TrainState, experien
     - `experience`: experience sampled from replay buffer
         - stores the observation, target policy, target value
     - `l2_reg_lambda`: L2 regularization weight (default = 1e-4)
+    - `dropout_key` : PRNGs for dropout
 
     Returns:
     - (loss, (aux_metrics, updates))
@@ -37,12 +39,17 @@ def az_default_loss_fn(params: chex.ArrayTree, train_state: TrainState, experien
         if hasattr(train_state, 'batch_stats') else {'params': params}
     mutables = ['batch_stats'] if hasattr(train_state, 'batch_stats') else []
 
+    # get dropout key
+    # fold_in with train_state.step which is increased for every call to apply_gradients() (train.py)
+    dropout_train_key = jax.random.fold_in(key=dropout_key, data=train_state.step)
+
     # get predictions
     (pred_policy, pred_value), updates = train_state.apply_fn(
         variables, 
         x=experience.observation_nn,
         train=True,
-        mutable=mutables
+        mutable=mutables,
+        rngs={'dropout': dropout_train_key}
     )
 
     # set invalid actions in policy to -inf

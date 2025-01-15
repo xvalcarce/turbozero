@@ -52,9 +52,9 @@ class TrainLoopOutput:
 
 
 class TrainStateWithBS(TrainState):
-    """Custom flax TrainState to handle BatchNorm"""
+    """Custom flax TrainState to handle BatchNorm and Dropout"""
     batch_stats: chex.ArrayTree
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+    key: jax.Array
 
 def extract_params(state: TrainState) -> chex.ArrayTree:
     """Extracts model parameters from TrainState.
@@ -227,6 +227,8 @@ class Trainer:
         Returns:
         - (TrainState): initialized training state
         """
+        # split keys
+        key, dropout_key = jax.random.split(key, num=2)
         # get template env state
         sample_env_state = self.make_template_env_state()
         # get sample nn input
@@ -240,7 +242,8 @@ class Trainer:
                 apply_fn=self.nn.apply,
                 params=params,
                 tx=self.optimizer,
-                batch_stats=variables['batch_stats']
+                batch_stats=variables['batch_stats'],
+                key=dropout_key,
             )
         # init TrrainState
         return TrainState.create(
