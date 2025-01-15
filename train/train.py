@@ -200,7 +200,7 @@ saving(trainer, output)
 init_state = loading()
 k = 1
 
-# Increasing MAX_TARGET_DEPTH, fine-tuning everytime
+# Increasing M_TARGET_DEPTH, fine-tuning everytime
 for i in range(
         int(config["environment"]["init_m_target_depth"])+1, 
         int(config["environment"]["final_m_target_depth"]),
@@ -229,3 +229,27 @@ for i in range(
     output_continued = trainer.train_loop(seed=0, num_epochs=num_epochs*k, initial_state=init_state);
     saving(trainer, output_continued)
     init_state = loading()
+
+k+=1
+trainer = Trainer(
+    batch_size = batch_size, # number of parallel environments to collect self-play games from
+    train_batch_size = train_batch_size, # training minibatch size
+    warmup_steps = 0, #non need as we re-load the collection
+    collection_steps_per_epoch = collection_steps_per_epoch,
+    train_steps_per_epoch = train_steps_per_epoch,
+    nn = nn,
+    loss_fn = partial(az_default_loss_fn, l2_reg_lambda = 0.0001),
+    optimizer = optax.adam(1e-3),
+    evaluator = alphazero,
+    memory_buffer = replay_memory,
+    max_episode_steps=max_steps,
+    env_step_fn = step_fn,
+    env_init_fn = _init_fn,
+    state_to_nn_input_fn=state_to_nn_input,
+    testers=[SinglePlayerTester(num_episodes=100)],
+    evaluator_test = alphazero_test,
+    # wandb_project_name='weighted_mcts_test' 
+)
+output_continued = trainer.train_loop(seed=0, num_epochs=config.getint("trainer","extra_epochs")+num_epochs*k, initial_state=init_state);
+saving(trainer, output_continued)
+init_state = loading()
