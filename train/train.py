@@ -11,6 +11,7 @@ import quantum_compilation.quantumcompilation as qc
 
 from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
+from core.networks.aztransformer import AZResnetTransformer, AZResnetTransformerConfig
 from core.evaluators.alphazero import AlphaZero
 from core.evaluators.mcts.weighted_mcts import WeightedMCTS, MCTS
 from core.evaluators.mcts.action_selection import PUCTSelector
@@ -28,7 +29,7 @@ config.read("config.ini")
 # Quantum compilation environment
 env = qc.QuantumCompilation()
 max_steps = qc.DEPTH
-MAX_TARGET_DEPTH = int(config["environment"]["init_max_target_depth"])
+M_TARGET_DEPTH = int(config["environment"]["init_m_target_depth"])
 
 # define environment dynamics functions
 def step_fn(state, action):
@@ -43,7 +44,7 @@ def step_fn(state, action):
     return state, metadata
 
 def _init_fn(key):
-    state = env._init(key,max_target_depth=MAX_TARGET_DEPTH)
+    state = env._init(key,m_target_depth=M_TARGET_DEPTH)
     observation = env.observe(state)
     state = state.replace(observation=observation)
     metadata = StepMetadata(
@@ -55,25 +56,27 @@ def _init_fn(key):
     )
     return state, metadata
 
-def init_fn(key):
-    state = env.init(key)
-    metadata = StepMetadata(
-        rewards = state.rewards,
-        terminated = state.terminated,
-        action_mask = state.legal_action_mask,
-        cur_player_id = state.current_player,
-        step=state._step_count
-    )
-    return state, metadata
+arch = config.get("neuralnetwork", "architecture") 
+if arch == "Resnet":
+    network = AZResnet
+    networkconfig = AZResnetConfig
+elif arch == "ResnetTransformer":
+    network = AZResnetTransformer
+    networkconfig = AZResnetTransformerConfig
+else:
+    raise TypeError("Network not supported")
 
-resnet = AZResnet(AZResnetConfig(
+nn = network(networkconfig(
     policy_head_out_size=env.num_actions,
-    num_blocks=int(config["resnet"]["num_blocks"]),
-    num_channels=int(config["resnet"]["num_channels"]),
-    num_policy_channels=int(config["resnet"]["num_policy_channels"]),
-    num_value_channels=int(config["resnet"]["num_value_channels"]),
-    kernel_size=int(config["resnet"]["kernel_size"]),
-    batch_norm_momentum=float(config["resnet"]["batch_norm_momentum"]),
+    num_blocks=int(config["neuralnetwork"]["num_blocks"]),
+    num_channels=int(config["neuralnetwork"]["num_channels"]),
+    num_policy_channels=int(config["neuralnetwork"]["num_policy_channels"]),
+    num_value_channels=int(config["neuralnetwork"]["num_value_channels"]),
+    kernel_size=int(config["neuralnetwork"]["kernel_size"]),
+    batch_norm_momentum=config.getfloat("neuralnetwork","batch_norm_momentum"),
+    num_transformer_heads=config.getint("neuralnetwork","num_transformer_heads"),
+    transformer_mlp_dim=config.getint("neuralnetwork","transformer_mlp_dim"),
+    transformer_embed_dim=config.getint("neuralnetwork","transformer_embed_dim"),
 ))
 
 replay_memory = EpisodeReplayBuffer(capacity=int(config["replay_memory"]["capacity"]))
@@ -84,7 +87,7 @@ def state_to_nn_input(state):
 
 # Define AlphaZero evaluator for self-play
 alphazero = AlphaZero(MCTS)(
-    eval_fn=make_nn_eval_fn(resnet, state_to_nn_input),
+    eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
     num_iterations=int(config["alphazero_selfplay"]["num_iterations"]),
     max_nodes=int(config["alphazero_selfplay"]["max_nodes"]),
     dirichlet_alpha=float(config["alphazero_selfplay"]["dirichlet_alpha"]),
@@ -97,7 +100,7 @@ alphazero = AlphaZero(MCTS)(
 
 # Define AlphaZero evaluator for evaluation games
 alphazero_test = AlphaZero(MCTS)(
-    eval_fn=make_nn_eval_fn(resnet, state_to_nn_input),
+    eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
     num_iterations=int(config["alphazero_evaluation"]["num_iterations"]),
     max_nodes=int(config["alphazero_evaluation"]["max_nodes"]),
     temperature=float(config["alphazero_evaluation"]["temperature"]),
@@ -121,7 +124,7 @@ trainer = Trainer(
     warmup_steps=warmup_steps,
     collection_steps_per_epoch=collection_steps_per_epoch,
     train_steps_per_epoch=train_steps_per_epoch,
-    nn=resnet,
+    nn=nn,
     loss_fn=partial(az_default_loss_fn, l2_reg_lambda=float(config["trainer"]["l2_reg_lambda"])),
     optimizer=optax.adam(float(config["trainer"]["optimizer_lr"])),
     evaluator=alphazero,
@@ -199,18 +202,18 @@ k = 1
 
 # Increasing MAX_TARGET_DEPTH, fine-tuning everytime
 for i in range(
-        int(config["environment"]["init_max_target_depth"])+1, 
-        int(config["environment"]["final_max_target_depth"]),
+        int(config["environment"]["init_m_target_depth"])+1, 
+        int(config["environment"]["final_m_target_depth"]),
         int(config["environment"]["target_depth_increment"])):
     k+=1
-    MAX_TARGET_DEPTH = i
+    M_TARGET_DEPTH = i
     trainer = Trainer(
         batch_size = batch_size, # number of parallel environments to collect self-play games from
         train_batch_size = train_batch_size, # training minibatch size
-        warmup_steps = warmup_steps,
+        warmup_steps = 0, #non need as we re-load the collection
         collection_steps_per_epoch = collection_steps_per_epoch,
         train_steps_per_epoch = train_steps_per_epoch,
-        nn = resnet,
+        nn = nn,
         loss_fn = partial(az_default_loss_fn, l2_reg_lambda = 0.0001),
         optimizer = optax.adam(1e-3),
         evaluator = alphazero,
