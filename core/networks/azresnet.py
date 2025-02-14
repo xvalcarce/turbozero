@@ -54,7 +54,7 @@ class AZResnet(nn.Module):
             x = ResidualBlock(channels=self.config.num_channels, momentum=self.config.batch_norm_momentum, kernel_size=self.config.kernel_size)(x, train=train)
 
         # policy head
-        policy = nn.Conv(features=self.config.num_policy_channels, kernel_size=(1,1), strides=(1,1), padding='SAME', use_bias=False)(x)
+        policy = nn.Conv(features=self.config.num_policy_channels, kernel_size=(self.config.kernel_size,self.config.kernel_size), strides=(1,1), padding='SAME', use_bias=False)(x)
         policy = nn.BatchNorm(momentum=self.config.batch_norm_momentum, use_running_average=not train)(policy)
         policy = nn.relu(policy)
         policy = policy.reshape((policy.shape[0], -1))
@@ -62,7 +62,7 @@ class AZResnet(nn.Module):
         policy = nn.softmax(policy)
 
         # value head
-        value = nn.Conv(features=self.config.num_value_channels, kernel_size=(1,1), strides=(1,1), padding='SAME', use_bias=False)(x)
+        value = nn.Conv(features=self.config.num_value_channels, kernel_size=(self.config.kernel_size,self.config.kernel_size), strides=(1,1), padding='SAME', use_bias=False)(x)
         value = nn.BatchNorm(use_running_average=not train)(value)
         value = nn.relu(value)
         value = value.reshape((value.shape[0], -1))

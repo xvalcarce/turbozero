@@ -4,6 +4,7 @@ import pickle
 import shutil
 import configparser
 import optax
+import qujax
 from functools import partial
 import quantum_compilation as q
 import quantum_compilation.quantumcompilation as qc
@@ -147,7 +148,7 @@ trainer = Trainer(
     train_steps_per_epoch=train_steps_per_epoch,
     nn=nn,
     loss_fn=partial(az_default_loss_fn, l2_reg_lambda=float(config["trainer"]["l2_reg_lambda"])),
-    optimizer=optax.adam(float(config["trainer"]["optimizer_lr"])),
+    optimizer=optax.adamw(float(config["trainer"]["optimizer_lr"])),
     evaluator=alphazero,
     memory_buffer=replay_memory,
     max_episode_steps=max_steps,
@@ -235,8 +236,8 @@ for i in range(
         collection_steps_per_epoch = collection_steps_per_epoch,
         train_steps_per_epoch = train_steps_per_epoch,
         nn = nn,
-        loss_fn = partial(az_default_loss_fn, l2_reg_lambda = 0.0001),
-        optimizer = optax.adam(1e-3),
+        loss_fn = partial(az_default_loss_fn, l2_reg_lambda = float(config["trainer"]["l2_reg_lambda"])),
+        optimizer = optax.adamw(float(config["trainer"]["optimizer_lr"])),
         evaluator = alphazero,
         memory_buffer = replay_memory,
         max_episode_steps=max_steps,
@@ -259,8 +260,8 @@ trainer = Trainer(
     collection_steps_per_epoch = collection_steps_per_epoch,
     train_steps_per_epoch = train_steps_per_epoch,
     nn = nn,
-    loss_fn = partial(az_default_loss_fn, l2_reg_lambda = 0.0001),
-    optimizer = optax.adam(1e-3),
+    loss_fn = partial(az_default_loss_fn, l2_reg_lambda = float(config["trainer"]["l2_reg_lambda"])),
+    optimizer = optax.adamw(float(config["trainer"]["optimizer_lr"])),
     evaluator = alphazero,
     memory_buffer = replay_memory,
     max_episode_steps=max_steps,
