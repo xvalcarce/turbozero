@@ -13,6 +13,7 @@ import quantum_compilation.quantumcompilation as qc
 from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.networks.aztransformer import AZResnetTransformer, AZResnetTransformerConfig
+from core.networks.azvit import AZVisionTransformer, AZVisionTransformerConfig
 from core.networks.azmlp import AZMLP, AZMLPConfig
 from core.evaluators.alphazero import AlphaZero
 from core.evaluators.mcts.weighted_mcts import WeightedMCTS, MCTS
@@ -98,6 +99,21 @@ elif arch == "MLP":
         use_batch_norm = config.getboolean("neuralnetwork","use_batch_norm", fallback=True),
         batch_norm_momentum = config.getfloat("neuralnetwork","batch_norm_momentum"),
         dropout_rate = config.getfloat("neuralnetwork","dropout_rate"),
+    ))
+elif arch == "VisionTransformer":
+    network = AZVisionTransformer
+    networkconfig = AZVisionTransformerConfig
+    nn = network(networkconfig(
+        policy_head_out_size=env.num_actions,
+        resnet_num_blocks=config.getint("neuralnetwork", "resnet_num_blocks"),
+        resnet_num_channels=config.getint("neuralnetwork", "resnet_num_channels"),
+        transformer_num_heads=config.getint("neuralnetwork", "transformer_num_heads"),
+        transformer_num_layers=config.getint("neuralnetwork", "transformer_num_layers"),
+        transformer_mlp_dim=config.getint("neuralnetwork", "transformer_mlp_dim"),
+        transformer_patches_size=config.getint("neuralnetwork", "transformer_patches_size"),
+        transformer_hidden_size=config.getint("neuralnetwork", "transformer_hidden_size"),
+        batch_norm_momentum=config.getfloat("neuralnetwork", "batch_norm_momentum"),
+        kernel_size=config.getint("neuralnetwork", "kernel_size")
     ))
 else:
     raise TypeError("Network not supported")
