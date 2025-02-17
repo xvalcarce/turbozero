@@ -30,6 +30,7 @@ class AZVisionTransformerConfig:
     transformer_hidden_size: int = 128
     batch_norm_momentum: float = 1.0
     kernel_size: int = 3
+    mlp_heads: bool = False
 
 class AddPositionEmbs(nn.Module):
   """Adds learnable positional embeddings.
@@ -221,11 +222,14 @@ class AZVisionTransformer(nn.Module):
                     num_heads=self.config.transformer_num_heads)(x, train=train)
         x = x[:,0]
 
-        # Policy and value heads
-        policy = nn.Dense(features=self.config.policy_head_out_size)(x)
-        policy = nn.softmax(policy)
+        if self.config.mlp_heads:
+            policy = nn.Dense(features=self.config.policy_head_out_size)(x)
+            policy = nn.softmax(policy)
 
-        value = nn.Dense(features=1)(x)
-        value = nn.tanh(value)
+            value = nn.Dense(features=1)(x)
+            value = nn.tanh(value)
+        else:
+            policy = x[...,0]
+            value = x[...,1:]
 
         return policy, value
