@@ -156,6 +156,16 @@ warmup_steps = int(config["trainer"]["warmup_steps"])
 collection_steps_per_epoch = int(config["trainer"]["collection_steps_per_epoch"])
 train_steps_per_epoch = batch_size * collection_steps_per_epoch // train_batch_size
 
+opt = config.get("trainer", "optimizer") 
+if opt =="sgd":
+    optimizer = optax.sgd
+elif opt == "adam":
+    optimizer = optax.adam
+elif opt == "adamw":
+    optimizer = optax.adamw
+else:
+    raise TypeError("Not a valid optimizer (sgd, adam, adamw)")
+
 trainer = Trainer(
     batch_size=batch_size,
     train_batch_size=train_batch_size,
@@ -164,7 +174,7 @@ trainer = Trainer(
     train_steps_per_epoch=train_steps_per_epoch,
     nn=nn,
     loss_fn=partial(az_default_loss_fn, l2_reg_lambda=float(config["trainer"]["l2_reg_lambda"])),
-    optimizer=optax.adamw(float(config["trainer"]["optimizer_lr"])),
+    optimizer=optimizer(float(config["trainer"]["optimizer_lr"])),
     evaluator=alphazero,
     memory_buffer=replay_memory,
     max_episode_steps=max_steps,
@@ -253,7 +263,7 @@ for i in range(
         train_steps_per_epoch = train_steps_per_epoch,
         nn = nn,
         loss_fn = partial(az_default_loss_fn, l2_reg_lambda = float(config["trainer"]["l2_reg_lambda"])),
-        optimizer = optax.adamw(float(config["trainer"]["optimizer_lr"])),
+        optimizer = optimizer(float(config["trainer"]["optimizer_lr"])),
         evaluator = alphazero,
         memory_buffer = replay_memory,
         max_episode_steps=max_steps,
@@ -277,7 +287,7 @@ trainer = Trainer(
     train_steps_per_epoch = train_steps_per_epoch,
     nn = nn,
     loss_fn = partial(az_default_loss_fn, l2_reg_lambda = float(config["trainer"]["l2_reg_lambda"])),
-    optimizer = optax.adamw(float(config["trainer"]["optimizer_lr"])),
+    optimizer = optimizer(float(config["trainer"]["optimizer_lr"])),
     evaluator = alphazero,
     memory_buffer = replay_memory,
     max_episode_steps=max_steps,
