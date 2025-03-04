@@ -63,6 +63,7 @@ arch = config.get("neuralnetwork", "architecture")
 if arch == "Resnet":
     network = AZResnet
     networkconfig = AZResnetConfig
+    kernel_size = config.getint("neuralnetwork","kernel_size")
     nn = network(networkconfig(
         policy_head_out_size=env.num_actions,
         num_blocks=int(config["neuralnetwork"]["num_blocks"]),
@@ -70,6 +71,8 @@ if arch == "Resnet":
         num_policy_channels=int(config["neuralnetwork"]["num_policy_channels"]),
         num_value_channels=int(config["neuralnetwork"]["num_value_channels"]),
         kernel_size=int(config["neuralnetwork"]["kernel_size"]),
+        kernel_size_value=config.getint("neuralnetwork","kernel_size_value",fallback=kernel_size),
+        kernel_size_policy=config.getint("neuralnetwork","kernel_size_policy",fallback=kernel_size),
         batch_norm_momentum=config.getfloat("neuralnetwork","batch_norm_momentum"),
     ))
 elif arch == "ResnetTransformer":
