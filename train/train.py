@@ -12,7 +12,8 @@ import quantum_compilation.quantumcompilation as qc
 
 from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
-from core.networks.aztransformer import AZResnetTransformer, AZResnetTransformerConfig
+from core.networks.azresnettransformer import AZResnetTransformer, AZResnetTransformerConfig
+from core.networks.aztransformer import AZTransformer, AZTransformerConfig
 from core.networks.azvit import AZVisionTransformer, AZVisionTransformerConfig
 from core.networks.azmlp import AZMLP, AZMLPConfig
 from core.evaluators.alphazero import AlphaZero
@@ -31,6 +32,7 @@ config.read("config.ini")
 
 # Quantum compilation environment
 env = qc.QuantumCompilation()
+mat_size = qc.DIM_OBS**2
 max_steps = qc.DEPTH
 M_TARGET_DEPTH = int(config["environment"]["init_m_target_depth"])
 
@@ -58,6 +60,10 @@ def _init_fn(key):
         step=state._step_count
     )
     return state, metadata
+
+def state_to_nn_input(state):
+    # pgx does this for us with state.observation!
+    return state.observation
 
 arch = config.get("neuralnetwork", "architecture") 
 if arch == "Resnet":
@@ -118,14 +124,24 @@ elif arch == "VisionTransformer":
         batch_norm_momentum=config.getfloat("neuralnetwork", "batch_norm_momentum"),
         kernel_size=config.getint("neuralnetwork", "kernel_size")
     ))
+elif arch == "Transformer":
+    network = AZTransformer
+    networkconfig = AZTransformerConfig
+    nn = network(networkconfig(
+        policy_head_out_size=env.num_actions,
+        num_blocks=config.getint("neuralnetwork", "num_blocks"),
+        num_heads=config.getint("neuralnetwork", "num_heads"),
+        mlp_dim=config.getint("neuralnetwork", "mlp_dim"),
+        embed_dim=config.getint("neuralnetwork", "embed_dim"),
+    ))
+    # Tokenized matrix cell entry
+    def state_to_nn_input(state):
+        obs = state.observation
+        return obs.transpose().reshape(mat_size,2)
 else:
     raise TypeError("Network not supported")
 
 replay_memory = EpisodeReplayBuffer(capacity=int(config["replay_memory"]["capacity"]))
-
-def state_to_nn_input(state):
-    # pgx does this for us with state.observation!
-    return state.observation
 
 # Define AlphaZero evaluator for self-play
 alphazero = AlphaZero(MCTS)(
