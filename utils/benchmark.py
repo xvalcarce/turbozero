@@ -63,5 +63,5 @@ def benchmark(depth,runs,key=jax.random.PRNGKey(0)):
     print(f"Average compiled depth {sum(length)/len(length)}.")
     return length
 
-
+to_julia = [6,7,8,15,16,17,18,19,20,9,10,11,12,13,14,2,4,0,5,1,3]
 

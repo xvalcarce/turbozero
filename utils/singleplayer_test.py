@@ -30,7 +30,10 @@ from core.types import StepMetadata
 # Load configuration
 # load_dir = "./data/25-02-08_13h05/"
 # load_dir = "./train/data/25-02-16_19h43/" # all-to-all 3 qubits
-load_dir = "./train/data/25-02-20_12h18/" # all-to-all 3 qubits
+# load_dir = "./train/data/25-02-20_12h18/" # all-to-all 3 qubits
+# load_dir = "./train/data/25-02-22_11h50/" # all-to-all 3 qubits Resnet
+# load_dir = "./train/data/25-02-25_09h37/" # all-to-all 3 qubits Resnet Transformer
+load_dir = "./train/data/25-02-27_11h42/" # all-to-all 3 qubits Resnet Transformer
 abs_load_dir = str(Path(os.getcwd()).parent.absolute())+load_dir[1:]
 config = configparser.ConfigParser()
 config.read(abs_load_dir+"config.ini")
@@ -149,6 +152,7 @@ alphazero_test = AlphaZero(MCTS)(
     num_iterations=int(config["alphazero_evaluation"]["num_iterations"]),
     max_nodes=int(config["alphazero_evaluation"]["max_nodes"]),
     temperature=float(config["alphazero_evaluation"]["temperature"]),
+    dirichlet_alpha=config.getfloat("alphazero_evaluation", "dirichlet_alpha", fallback=1.0),
     dirichlet_epsilon=float(config["alphazero_evaluation"]["dirichlet_epsilon"]),
     branching_factor=env.num_actions,
     action_selector=PUCTSelector(c=float(config["alphazero_evaluation"]["puct_c"])),
@@ -158,9 +162,10 @@ alphazero_test = AlphaZero(MCTS)(
 # Define AlphaZero evaluator for evaluation games
 alphazero_deterministic = AlphaZero(MCTS)(
     eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
-    num_iterations=1_000,
-    max_nodes=1_000,
+    num_iterations=200,
+    max_nodes=1000,
     temperature=0.0,
+    dirichlet_alpha=config.getfloat("alphazero_evaluation", "dirichlet_alpha", fallback=1.0),
     dirichlet_epsilon=float(config["alphazero_evaluation"]["dirichlet_epsilon"]),
     branching_factor=env.num_actions,
     action_selector=PUCTSelector(c=float(config["alphazero_evaluation"]["puct_c"])),
@@ -320,7 +325,7 @@ def game_step(state: SinglePlayerGameState, _, params: chex.ArrayTree, env_step_
 game_step = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero)
 game_step_deterministic = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero_deterministic)
 
-def game(key, state):
+def game(key, state, max_steps=max_steps):
     state = state.replace(key=key)
     state, collection_state = jax.lax.scan(
             game_step,
@@ -330,7 +335,7 @@ def game(key, state):
             )
     return collection_state
 
-def game_deterministic(key, state):
+def game_deterministic(key, state, max_steps=max_steps):
     state = state.replace(key=key)
     state, collection_state = jax.lax.scan(
             game_step_deterministic,
@@ -340,7 +345,7 @@ def game_deterministic(key, state):
             )
     return collection_state
 
-def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),deterministic_run=False):
+def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),deterministic_run=False, max_steps=max_steps):
     mat = qujax.get_params_to_unitarytensor_func([unitary],[locs],[[]],qc.N_QUBITS)
     target_v = mat().reshape(qc.DIM_OBS,qc.DIM_OBS).astype(jnp.complex64)
     env_state, metadata = _init_fn(key,v=target_v)
@@ -356,13 +361,14 @@ def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),determinist
                                            eval_state=eval_state, 
                                            completed=jnp.array(False, dtype=jnp.bool_), 
                                            outcome=jnp.array([0.0], dtype=jnp.float32))
-        sd = game_deterministic(key, init_state)
+        sd = game_deterministic(key, init_state, max_steps)
         idx = jnp.nonzero(sd.outcome)
         if idx[0].size == 0:
             print("No circuit found deterministically.")
+            return False
         else:
             len_c = idx[0][1]
-            print(f"Circuit found deterministically with depth {len_c}:")
+            print(f"Circuit found deterministically with depth {len_c+1}:")
             print_circuit(sd.env_state._circuit[len_c],len_c+1)
             return True
 
@@ -374,8 +380,8 @@ def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),determinist
                                        eval_state=eval_state, 
                                        completed=jnp.array(False, dtype=jnp.bool_), 
                                        outcome=jnp.array([0.0], dtype=jnp.float32))
-    gg = partial(game, state=init_state)
-    r = run//10
+    gg = partial(game, state=init_state, max_steps=max_steps)
+    r = run//5
     for ii in range(r):
         keys = jax.random.split(key, num=run) # 10 is reasonnable for 8GB of VRAM
         s = jax.vmap(gg)(keys)
@@ -389,6 +395,6 @@ def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),determinist
             min_c = jnp.argmin(idx[1])
             id_c = idx[0][min_c] # idices of cicruit
             len_c = idx[1][min_c] # length of circuit
-            print(f"Circuit found with depth {len_c}:")
+            print(f"Circuit found with depth {len_c+1}:")
             print_circuit(s.env_state._circuit[id_c][len_c],len_c+1)
             return True
