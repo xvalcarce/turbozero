@@ -174,6 +174,7 @@ train_batch_size = int(config["trainer"]["train_batch_size"])
 warmup_steps = int(config["trainer"]["warmup_steps"])
 collection_steps_per_epoch = int(config["trainer"]["collection_steps_per_epoch"])
 train_steps_per_epoch = batch_size * collection_steps_per_epoch // train_batch_size
+test_num_episodes = config.getint("trainer","test_num_episodes", fallback=100)
 
 opt = config.get("trainer", "optimizer") 
 if opt =="sgd":
@@ -189,7 +190,7 @@ trainer = Trainer(
     batch_size=batch_size,
     train_batch_size=train_batch_size,
     warmup_steps=warmup_steps,
-    collection_steps_per_epoch=collection_steps_per_epoch,
+    collection_steps_per_epoch=M_TARGET_DEPTH*collection_steps_per_epoch,
     train_steps_per_epoch=train_steps_per_epoch,
     nn=nn,
     loss_fn=partial(az_default_loss_fn, l2_reg_lambda=float(config["trainer"]["l2_reg_lambda"])),
@@ -200,7 +201,7 @@ trainer = Trainer(
     env_step_fn=step_fn,
     env_init_fn=_init_fn,
     state_to_nn_input_fn=state_to_nn_input,
-    testers=[SinglePlayerTester(num_episodes=100)],
+    testers=[SinglePlayerTester(num_episodes=test_num_episodes)],
     evaluator_test=alphazero_test,
 )
 
@@ -262,6 +263,7 @@ def loading() -> TrainLoopOutput:
 
 # First Training
 num_epochs = int(config["trainer"]["num_epochs"])
+print(f"Mean target depth: {M_TARGET_DEPTH}")
 output = trainer.train_loop(seed=0, num_epochs=num_epochs)
 saving(trainer, output)
 init_state = loading()
@@ -274,22 +276,23 @@ for i in range(
         int(config["environment"]["target_depth_increment"])):
     k+=1
     M_TARGET_DEPTH = i
+    print(f"Mean target depth: {M_TARGET_DEPTH}")
     trainer = Trainer(
         batch_size = batch_size, # number of parallel environments to collect self-play games from
         train_batch_size = train_batch_size, # training minibatch size
         warmup_steps = 0, #non need as we re-load the collection
-        collection_steps_per_epoch = collection_steps_per_epoch,
-        train_steps_per_epoch = train_steps_per_epoch,
+        collection_steps_per_epoch = M_TARGET_DEPTH*collection_steps_per_epoch,
+        train_steps_per_epoch = M_TARGET_DEPTH*train_steps_per_epoch,
         nn = nn,
         loss_fn = partial(az_default_loss_fn, l2_reg_lambda = float(config["trainer"]["l2_reg_lambda"])),
         optimizer = optimizer(float(config["trainer"]["optimizer_lr"])),
         evaluator = alphazero,
         memory_buffer = replay_memory,
-        max_episode_steps=max_steps,
+        max_episode_steps = max_steps,
         env_step_fn = step_fn,
         env_init_fn = _init_fn,
         state_to_nn_input_fn=state_to_nn_input,
-        testers=[SinglePlayerTester(num_episodes=100)],
+        testers=[SinglePlayerTester(num_episodes=test_num_episodes)],
         evaluator_test = alphazero_test,
         # wandb_project_name='weighted_mcts_test' 
     )
@@ -302,18 +305,18 @@ trainer = Trainer(
     batch_size = batch_size, # number of parallel environments to collect self-play games from
     train_batch_size = train_batch_size, # training minibatch size
     warmup_steps = 0, #non need as we re-load the collection
-    collection_steps_per_epoch = collection_steps_per_epoch,
-    train_steps_per_epoch = train_steps_per_epoch,
+    collection_steps_per_epoch = collection_steps_per_epoch*M_TARGET_DEPTH,
+    train_steps_per_epoch = M_TARGET_DEPTH*train_steps_per_epoch,
     nn = nn,
     loss_fn = partial(az_default_loss_fn, l2_reg_lambda = float(config["trainer"]["l2_reg_lambda"])),
     optimizer = optimizer(float(config["trainer"]["optimizer_lr"])),
     evaluator = alphazero,
     memory_buffer = replay_memory,
-    max_episode_steps=max_steps,
+    max_episode_steps = max_steps,
     env_step_fn = step_fn,
     env_init_fn = _init_fn,
     state_to_nn_input_fn=state_to_nn_input,
-    testers=[SinglePlayerTester(num_episodes=100)],
+    testers=[SinglePlayerTester(num_episodes=test_num_episodes)],
     evaluator_test = alphazero_test,
     # wandb_project_name='weighted_mcts_test' 
 )
