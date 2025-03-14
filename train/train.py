@@ -7,6 +7,7 @@ import configparser
 import optax
 import qujax
 from functools import partial
+import jax.numpy as jnp
 import quantum_compilation as q
 import quantum_compilation.quantumcompilation as qc
 
@@ -151,6 +152,7 @@ def az_factory(az_type: str, **kwargs):
         d_temp = []
         for c in config_d_temp:
             d_temp += [c[1]]*c[0]       # Ensure arg2 is provided for Foobar
+        d_temp = jnp.array(d_temp)
         return AlphaZero(ScheduledTemperatureMCTS)(**kwargs, d_temperature=d_temp)
     else:
         return AlphaZero(MCTS)(**kwargs)
