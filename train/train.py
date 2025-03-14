@@ -1,4 +1,5 @@
 import os
+import ast
 import datetime
 import pickle
 import shutil
@@ -18,6 +19,7 @@ from core.networks.azvit import AZVisionTransformer, AZVisionTransformerConfig
 from core.networks.azmlp import AZMLP, AZMLPConfig
 from core.evaluators.alphazero import AlphaZero
 from core.evaluators.mcts.weighted_mcts import WeightedMCTS, MCTS
+from core.evaluators.mcts.scheduled_temp_mcts import ScheduledTemperatureMCTS
 from core.evaluators.mcts.action_selection import PUCTSelector
 from core.evaluators.evaluation_fns import make_nn_eval_fn, make_nn_eval_fn_no_params_callable
 from core.testing.two_player_tester import TwoPlayerTester
@@ -143,8 +145,18 @@ else:
 
 replay_memory = EpisodeReplayBuffer(capacity=int(config["replay_memory"]["capacity"]))
 
+def az_factory(az_type: str, **kwargs):
+    if config.getboolean(az_type,"use_dynamic_temperature",fallback=False):
+        config_d_temp = ast.literal_eval(config.get(az_type,"d_temperature"))
+        d_temp = []
+        for c in config_d_temp:
+            d_temp += [c[1]]*c[0]       # Ensure arg2 is provided for Foobar
+        return AlphaZero(ScheduledTemperatureMCTS)(**kwargs, d_temperature=d_temp)
+    else:
+        return AlphaZero(MCTS)(**kwargs)
+
 # Define AlphaZero evaluator for self-play
-alphazero = AlphaZero(MCTS)(
+alphazero = az_factory("alphazero_selfplay",
     eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
     num_iterations=int(config["alphazero_selfplay"]["num_iterations"]),
     max_nodes=int(config["alphazero_selfplay"]["max_nodes"]),
@@ -157,7 +169,7 @@ alphazero = AlphaZero(MCTS)(
 )
 
 # Define AlphaZero evaluator for evaluation games
-alphazero_test = AlphaZero(MCTS)(
+alphazero_test = az_factory("alphazero_evaluation",
     eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
     num_iterations=int(config["alphazero_evaluation"]["num_iterations"]),
     max_nodes=int(config["alphazero_evaluation"]["max_nodes"]),
