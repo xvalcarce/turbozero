@@ -156,8 +156,8 @@ def state_to_nn_input(state):
 # Define AlphaZero evaluator for self-play
 alphazero = AlphaZero(MCTS)(
     eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
-    num_iterations=200,
-    max_nodes=1_000,
+    num_iterations=int(config["alphazero_evaluation"]["num_iterations"]),
+    max_nodes=int(config["alphazero_evaluation"]["max_nodes"]),
     dirichlet_alpha=float(config["alphazero_selfplay"]["dirichlet_alpha"]),
     dirichlet_epsilon=float(config["alphazero_selfplay"]["dirichlet_epsilon"]),
     temperature=float(config["alphazero_selfplay"]["temperature"]),
@@ -169,9 +169,9 @@ alphazero = AlphaZero(MCTS)(
 # Define AlphaZero evaluator for evaluation games
 alphazero_test = AlphaZero(MCTS)(
     eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
-    num_iterations=int(config["alphazero_evaluation"]["num_iterations"]),
-    max_nodes=int(config["alphazero_evaluation"]["max_nodes"]),
-    temperature=float(config["alphazero_evaluation"]["temperature"]),
+    num_iterations=400,
+    max_nodes=1000,
+    temperature=0.6,
     dirichlet_alpha=config.getfloat("alphazero_evaluation", "dirichlet_alpha", fallback=1.0),
     dirichlet_epsilon=float(config["alphazero_evaluation"]["dirichlet_epsilon"]),
     branching_factor=env.num_actions,
@@ -280,7 +280,7 @@ try:
     s = ck.restore(ck.latest_step(), args=ocp.args.StandardRestore(dummy_state, strict=False))
 except:
     s = ck.restore(ck.latest_step(), items=dummy_state, restore_kwargs={'strict': False})
-s = ck.restore(84, args=ocp.args.StandardRestore(dummy_state, strict=False))
+s = ck.restore(ck.latest_step(), args=ocp.args.StandardRestore(dummy_state, strict=False))
 variables = {'params': s.params, 'batch_stats': s.batch_stats}
 variables = reshape_nested_dict(variables) # squeeze num_devices
 
@@ -344,7 +344,7 @@ def game_step(state: SinglePlayerGameState, _, params: chex.ArrayTree, env_step_
             outcome = rewards)
     return state, state
 
-game_step_ = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero)
+game_step_ = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero_test)
 game_step_deterministic = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero_deterministic)
 
 def game(key, state, max_steps=max_steps):
