@@ -21,7 +21,7 @@ def _init_fn(key,depth=10):
     v = v/jnp.linalg.norm(v, ord=2) 
     state = qc.State(_target_unitary = v.conjugate().transpose(),
                  _target_circuit = circuit,
-                 _target_depth = jnp.array(depth),
+                 _target_depth = jnp.array(max_steps),
                  legal_action_mask = qc._legal_action_mask(circuit,0)) # for ancilla case, not trivial 
     observation = env.observe(state)
     state = state.replace(observation=observation)
@@ -37,7 +37,7 @@ def _init_fn(key,depth=10):
 key = jax.random.PRNGKey(0)
 env_state, metadata = _init_fn(key)
 
-def one_benchmark(key,depth):
+def one_benchmark(key,depth,max_steps=max_steps):
     env_state, metadata = _init_fn(key,depth=depth)
     eval_state = alphazero_deterministic.init(template_embedding=env_state)
     init_state = SinglePlayerGameState(key=key, 
@@ -46,12 +46,12 @@ def one_benchmark(key,depth):
                                   eval_state=eval_state, 
                                   completed=jnp.array(False, dtype=jnp.bool_), 
                                   outcome=jnp.array([0.0], dtype=jnp.float32))
-    sd = game_deterministic(key, init_state)
+    sd = game_deterministic(key, init_state, max_steps=max_steps)
     return sd.outcome
 
-def benchmark(depth,runs,key=jax.random.PRNGKey(0)):
+def benchmark(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps):
     length = []
-    bench = partial(one_benchmark, depth=depth)
+    bench = partial(one_benchmark, depth=depth, max_steps=max_steps)
     r = runs//10
     for i in range(r):
         key, _ = jax.random.split(key)
@@ -60,7 +60,8 @@ def benchmark(depth,runs,key=jax.random.PRNGKey(0)):
         idx = jnp.nonzero(ssd)
         length += idx[1].tolist()
     print(f"Compiled {len(length)} / {runs} unitary.")
-    print(f"Average compiled depth {sum(length)/len(length)}.")
+    if length:
+        print(f"Average compiled depth {sum(length)/len(length)}.")
     return length
 
 to_julia = [6,7,8,15,16,17,18,19,20,9,10,11,12,13,14,2,4,0,5,1,3]

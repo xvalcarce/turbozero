@@ -17,7 +17,8 @@ import orbax.checkpoint as ocp
 
 from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
-from core.networks.aztransformer import AZResnetTransformer, AZResnetTransformerConfig
+from core.networks.aztransformer import AZTransformer, AZTransformerConfig
+from core.networks.azresnettransformer import AZResnetTransformer, AZResnetTransformerConfig
 from core.networks.azmlp import AZMLP, AZMLPConfig
 from core.evaluators.alphazero import AlphaZero
 from core.evaluators.mcts.weighted_mcts import MCTS
@@ -33,7 +34,13 @@ from core.types import StepMetadata
 # load_dir = "./train/data/25-02-20_12h18/" # all-to-all 3 qubits
 # load_dir = "./train/data/25-02-22_11h50/" # all-to-all 3 qubits Resnet
 # load_dir = "./train/data/25-02-25_09h37/" # all-to-all 3 qubits Resnet Transformer
-load_dir = "./train/data/25-02-27_11h42/" # all-to-all 3 qubits Resnet Transformer
+# load_dir = "./train/data/25-02-27_11h42/" # all-to-all 3 qubits Resnet Transformer
+# load_dir = "./train/data/transformer/ancilla/25-04-01_12h37/" # ancilla transformer 2qubits+1
+# load_dir = "./train/data/resnet/ancilla/25-04-09_11h43/" # ancilla resnet 3qubits+1
+load_dir = "./train/data/resnet/ancilla/25-04-14_15h03/" # ancilla resnet 3qubits+1
+# load_dir = "./train/data/resnet/ancilla/25-06-16_10h37/" # ancilla resnet 3qubits+1
+# load_dir = "./foo/data/transformer/ancilla/25-04-23_16h54/" # ancilla resnet 3qubits+1
+
 abs_load_dir = str(Path(os.getcwd()).parent.absolute())+load_dir[1:]
 config = configparser.ConfigParser()
 config.read(abs_load_dir+"config.ini")
@@ -53,8 +60,8 @@ max_steps = qc.DEPTH
 M_TARGET_DEPTH = int(config["environment"]["init_m_target_depth"])
 
 # Target unitary
-# mat = qujax.get_params_to_unitarytensor_func(['CX'],[[0,2]],[[]],qc.N_QUBITS)
-mat = qujax.get_params_to_unitarytensor_func(['CCX'],[[0,1,2]],[[]],qc.N_QUBITS)
+mat = qujax.get_params_to_unitarytensor_func(['CX'],[[0,1]],[[]],qc.N_QUBITS)
+#mat = qujax.get_params_to_unitarytensor_func(['CCX'],[[0,1,2]],[[]],qc.N_QUBITS)
 TARGET_V = mat().reshape(qc.DIM_OBS,qc.DIM_OBS).astype(jnp.complex64)
 
 # define environment dynamics functions
@@ -87,13 +94,16 @@ arch = config.get("neuralnetwork", "architecture")
 if arch == "Resnet":
     network = AZResnet
     networkconfig = AZResnetConfig
+    kernel_size=int(config["neuralnetwork"]["kernel_size"])
     nn = network(networkconfig(
         policy_head_out_size=env.num_actions,
         num_blocks=int(config["neuralnetwork"]["num_blocks"]),
         num_channels=int(config["neuralnetwork"]["num_channels"]),
         num_policy_channels=int(config["neuralnetwork"]["num_policy_channels"]),
         num_value_channels=int(config["neuralnetwork"]["num_value_channels"]),
-        kernel_size=int(config["neuralnetwork"]["kernel_size"]),
+        kernel_size=kernel_size,
+        kernel_size_value=config.getint("neuralnetwork","kernel_size_value", fallback=kernel_size),
+        kernel_size_policy=config.getint("neuralnetwork","kernel_size", fallback=kernel_size),
         batch_norm_momentum=config.getfloat("neuralnetwork","batch_norm_momentum"),
     ))
 elif arch == "ResnetTransformer":
@@ -110,6 +120,16 @@ elif arch == "ResnetTransformer":
         num_transformer_heads=config.getint("neuralnetwork","num_transformer_heads"),
         transformer_mlp_dim=config.getint("neuralnetwork","transformer_mlp_dim"),
         transformer_embed_dim=config.getint("neuralnetwork","transformer_embed_dim"),
+    ))
+elif arch == "Transformer":
+    network = AZTransformer
+    networkconfig = AZTransformerConfig
+    nn = network(networkconfig(
+        policy_head_out_size=env.num_actions,
+        num_blocks=int(config["neuralnetwork"]["num_blocks"]),
+        num_heads=config.getint("neuralnetwork","num_heads"),
+        mlp_dim=config.getint("neuralnetwork","mlp_dim"),
+        embed_dim=config.getint("neuralnetwork","embed_dim"),
     ))
 elif arch == "MLP":
     network = AZMLP
@@ -136,7 +156,7 @@ def state_to_nn_input(state):
 # Define AlphaZero evaluator for self-play
 alphazero = AlphaZero(MCTS)(
     eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
-    num_iterations=1_000,
+    num_iterations=200,
     max_nodes=1_000,
     dirichlet_alpha=float(config["alphazero_selfplay"]["dirichlet_alpha"]),
     dirichlet_epsilon=float(config["alphazero_selfplay"]["dirichlet_epsilon"]),
@@ -162,7 +182,7 @@ alphazero_test = AlphaZero(MCTS)(
 # Define AlphaZero evaluator for evaluation games
 alphazero_deterministic = AlphaZero(MCTS)(
     eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
-    num_iterations=200,
+    num_iterations=400,
     max_nodes=1000,
     temperature=0.0,
     dirichlet_alpha=config.getfloat("alphazero_evaluation", "dirichlet_alpha", fallback=1.0),
@@ -193,11 +213,11 @@ else:
 
 # Dummy trainer
 trainer = Trainer(
-    batch_size=64,
-    train_batch_size=64,
-    warmup_steps=0,
-    collection_steps_per_epoch=1,
-    train_steps_per_epoch=1,
+    batch_size=8,
+    train_batch_size=8,
+    warmup_steps=warmup_steps,
+    collection_steps_per_epoch=8,
+    train_steps_per_epoch=8,
     nn=nn,
     loss_fn=partial(az_default_loss_fn, l2_reg_lambda=float(config["trainer"]["l2_reg_lambda"])),
     optimizer=optimizer(float(config["trainer"]["optimizer_lr"])),
@@ -257,9 +277,10 @@ dummy_state = trainer.init_train_state(init_keys)
 # restore nn params from latest training step
 ck = ocp.CheckpointManager(abs_load_dir)
 try:
-    s = ck.restore(ck.latest_step(), args=ocp.args.StandardRestore(dummy_state), restore_kwargs={'strict': False})
+    s = ck.restore(ck.latest_step(), args=ocp.args.StandardRestore(dummy_state, strict=False))
 except:
     s = ck.restore(ck.latest_step(), items=dummy_state, restore_kwargs={'strict': False})
+s = ck.restore(84, args=ocp.args.StandardRestore(dummy_state, strict=False))
 variables = {'params': s.params, 'batch_stats': s.batch_stats}
 variables = reshape_nested_dict(variables) # squeeze num_devices
 
@@ -290,6 +311,7 @@ class SinglePlayerGameState:
     outcome: float
 
 # A game
+#@partial(jax.pmap, axis_name='p', static_broadcast_array=(0,))
 def game_step(state: SinglePlayerGameState, _, params: chex.ArrayTree, env_step_fn=step_fn, evaluator=alphazero):
     step_key, key = jax.random.split(state.key)
                                                                                            
@@ -322,13 +344,13 @@ def game_step(state: SinglePlayerGameState, _, params: chex.ArrayTree, env_step_
             outcome = rewards)
     return state, state
 
-game_step = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero)
+game_step_ = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero)
 game_step_deterministic = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero_deterministic)
 
 def game(key, state, max_steps=max_steps):
     state = state.replace(key=key)
     state, collection_state = jax.lax.scan(
-            game_step,
+            game_step_,
             init=state,
             xs=None,
             length=max_steps
