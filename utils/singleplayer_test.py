@@ -1,4 +1,5 @@
 import os
+import time
 import pickle
 import shutil
 import configparser
@@ -23,7 +24,7 @@ from core.networks.azmlp import AZMLP, AZMLPConfig
 from core.evaluators.alphazero import AlphaZero
 from core.evaluators.mcts.weighted_mcts import MCTS
 from core.evaluators.mcts.action_selection import PUCTSelector
-from core.evaluators.evaluation_fns import make_nn_eval_fn
+from core.evaluators.evaluation_fns import make_nn_eval_fn, make_nn_eval_fn_no_params_callable
 from core.training.train import Trainer, TrainLoopOutput
 from core.training.loss_fns import az_default_loss_fn
 from core.types import StepMetadata
@@ -38,6 +39,7 @@ from core.types import StepMetadata
 # load_dir = "./train/data/transformer/ancilla/25-04-01_12h37/" # ancilla transformer 2qubits+1
 # load_dir = "./train/data/resnet/ancilla/25-04-09_11h43/" # ancilla resnet 3qubits+1
 load_dir = "./train/data/resnet/ancilla/25-04-14_15h03/" # ancilla resnet 3qubits+1
+load_dir = "./train/data/resnet/ancilla/25-06-23_15h30/" # ancilla resnet 3qubits+1, smaller model
 # load_dir = "./train/data/resnet/ancilla/25-06-16_10h37/" # ancilla resnet 3qubits+1
 # load_dir = "./foo/data/transformer/ancilla/25-04-23_16h54/" # ancilla resnet 3qubits+1
 
@@ -153,6 +155,8 @@ def state_to_nn_input(state):
     # pgx does this for us with state.observation!
     return state.observation
 
+## AlphaZero and MCTS players
+
 # Define AlphaZero evaluator for self-play
 alphazero = AlphaZero(MCTS)(
     eval_fn=make_nn_eval_fn(nn, state_to_nn_input),
@@ -192,6 +196,32 @@ alphazero_deterministic = AlphaZero(MCTS)(
     discount=float(config["alphazero_evaluation"]["discount"]),
 )
 
+def fid_eval(obs):
+    obs = obs[0,0]+obs[1,1]*1j
+    f = jnp.square(jnp.abs(obs.trace()))/qc.FID_RENORM > qc.FIDELTY
+    return jnp.ones((1,env.num_actions)), jnp.array([f],dtype=jnp.float32)
+
+fid_baseline_eval_fn = make_nn_eval_fn_no_params_callable(fid_eval, state_to_nn_input)
+
+mcts_baseline = AlphaZero(MCTS)(
+        eval_fn=fid_baseline_eval_fn,
+        num_iterations = 400,
+        max_nodes = 1000,
+        branching_factor = env.num_actions,
+        action_selector = PUCTSelector(c=float(config["alphazero_evaluation"]["puct_c"])),
+        temperature = 0.0,
+        discount = 1.0
+)
+
+mcts_baseline_stochastic = AlphaZero(MCTS)(
+        eval_fn=fid_baseline_eval_fn,
+        num_iterations = 400,
+        max_nodes = 1000,
+        branching_factor = env.num_actions,
+        action_selector = PUCTSelector(c=float(config["alphazero_evaluation"]["puct_c"])),
+        temperature = 0.6,
+        discount = 1.0
+)
 
 # Initialize trainer
 batch_size = int(config["trainer"]["batch_size"])
@@ -311,10 +341,9 @@ class SinglePlayerGameState:
     outcome: float
 
 # A game
-#@partial(jax.pmap, axis_name='p', static_broadcast_array=(0,))
+# @partial(jax.pmap, axis_name='p', static_broadcasted_argnums=(0,))
 def game_step(state: SinglePlayerGameState, _, params: chex.ArrayTree, env_step_fn=step_fn, evaluator=alphazero):
     step_key, key = jax.random.split(state.key)
-                                                                                           
     # Evaluate and take action
     output = evaluator.evaluate(
         key=step_key,
@@ -346,6 +375,8 @@ def game_step(state: SinglePlayerGameState, _, params: chex.ArrayTree, env_step_
 
 game_step_ = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero_test)
 game_step_deterministic = partial(game_step, params=variables, env_step_fn=step_fn, evaluator=alphazero_deterministic)
+game_step_mcts = partial(game_step, params=None, env_step_fn=step_fn, evaluator=mcts_baseline)
+game_step_mcts_stochastic = partial(game_step, params=None, env_step_fn=step_fn, evaluator=mcts_baseline_stochastic)
 
 def game(key, state, max_steps=max_steps):
     state = state.replace(key=key)
@@ -367,10 +398,34 @@ def game_deterministic(key, state, max_steps=max_steps):
             )
     return collection_state
 
-def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),deterministic_run=False, max_steps=max_steps):
+def game_mcts(key, state, max_steps=max_steps):
+    state = state.replace(key=key)
+    state, collection_state = jax.lax.scan(
+            game_step_mcts,
+            init=state,
+            xs=None,
+            length=max_steps
+            )
+    return collection_state
+
+
+def game_mcts_stochastic(key, state, max_steps=max_steps):
+    state = state.replace(key=key)
+    state, collection_state = jax.lax.scan(
+            game_step_mcts_stochastic,
+            init=state,
+            xs=None,
+            length=max_steps
+            )
+    return collection_state
+
+def compile(unitary='CX',locs=[0,1],run=10,batch_run=10,key=jax.random.PRNGKey(0),deterministic_run=False, max_steps=max_steps, hotstart=[]):
     mat = qujax.get_params_to_unitarytensor_func([unitary],[locs],[[]],qc.N_QUBITS)
     target_v = mat().reshape(qc.DIM_OBS,qc.DIM_OBS).astype(jnp.complex64)
     env_state, metadata = _init_fn(key,v=target_v)
+    max_steps = max_steps-len(hotstart)
+    for g in hotstart:
+        env_state, metadata = step_fn(env_state,g)
     print("Compiling the unitary:")
     print(env_state._target_unitary)
 
@@ -383,7 +438,9 @@ def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),determinist
                                            eval_state=eval_state, 
                                            completed=jnp.array(False, dtype=jnp.bool_), 
                                            outcome=jnp.array([0.0], dtype=jnp.float32))
+        t = time.time()
         sd = game_deterministic(key, init_state, max_steps)
+        print(f"Runtime {round(time.time()-t,2)}")
         idx = jnp.nonzero(sd.outcome)
         if idx[0].size == 0:
             print("No circuit found deterministically.")
@@ -395,7 +452,7 @@ def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),determinist
             return True
 
     # stochastic runs (temp=1.)
-    eval_state = alphazero.init(template_embedding=env_state)
+    eval_state = alphazero_test.init(template_embedding=env_state)
     init_state = SinglePlayerGameState(key=key, 
                                        env_state=env_state, 
                                        env_state_metadata=metadata, 
@@ -403,16 +460,16 @@ def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),determinist
                                        completed=jnp.array(False, dtype=jnp.bool_), 
                                        outcome=jnp.array([0.0], dtype=jnp.float32))
     gg = partial(game, state=init_state, max_steps=max_steps)
-    r = run//5
+    r = run//batch_run
+    t = time.time()
     for ii in range(r):
-        keys = jax.random.split(key, num=run) # 10 is reasonnable for 8GB of VRAM
+        key, _ = jax.random.split(key)
+        keys = jax.random.split(key, num=batch_run) # 10 is reasonnable for 8GB of VRAM
         s = jax.vmap(gg)(keys)
         # extract indicies, non zero values
         idx = jnp.nonzero(s.outcome)
-        if idx[0].size == 0:
-            print("No circuit found.")
-            return False
-        else:
+        if idx[0].size != 0:
+            print(f"Runtime {round(time.time()-t,2)}")
             # element with smallest len
             min_c = jnp.argmin(idx[1])
             id_c = idx[0][min_c] # idices of cicruit
@@ -420,3 +477,6 @@ def compile(unitary='CX',locs=[0,1],run=10,key=jax.random.PRNGKey(0),determinist
             print(f"Circuit found with depth {len_c+1}:")
             print_circuit(s.env_state._circuit[id_c][len_c],len_c+1)
             return True
+    print(f"Runtime {round(time.time()-t,2)}")
+    print("No circuit found.")
+    return False
