@@ -314,6 +314,18 @@ s = ck.restore(ck.latest_step(), args=ocp.args.StandardRestore(dummy_state, stri
 variables = {'params': s.params, 'batch_stats': s.batch_stats}
 variables = reshape_nested_dict(variables) # squeeze num_devices
 
+def restore_variables(i):
+    try:
+        s = ck.restore(i, args=ocp.args.StandardRestore(dummy_state, strict=False))
+    except:
+        s = ck.restore(i, items=dummy_state, restore_kwargs={'strict': False})
+    s = ck.restore(i, args=ocp.args.StandardRestore(dummy_state, strict=False))
+    variables = {'params': s.params, 'batch_stats': s.batch_stats}
+    variables = reshape_nested_dict(variables) # squeeze num_devices
+    return variables
+
+all_variables = [restore_variables(i) for i in ck.all_steps()]
+
 # AZ agent
 evaluator = alphazero
 env_state, metadata = _init_fn(key)
@@ -407,7 +419,6 @@ def game_mcts(key, state, max_steps=max_steps):
             length=max_steps
             )
     return collection_state
-
 
 def game_mcts_stochastic(key, state, max_steps=max_steps):
     state = state.replace(key=key)
