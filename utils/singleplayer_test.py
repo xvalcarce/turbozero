@@ -452,7 +452,7 @@ def compile(unitary='CX',locs=[0,1],run=10,batch_run=10,key=jax.random.PRNGKey(0
         t = time.time()
         sd = game_deterministic(key, init_state, max_steps)
         print(f"Runtime {round(time.time()-t,2)}")
-        idx = jnp.nonzero(sd.outcome)
+        idx = jnp.where(sd.outcome == 1)
         if idx[0].size == 0:
             print("No circuit found deterministically.")
             return False
@@ -478,7 +478,7 @@ def compile(unitary='CX',locs=[0,1],run=10,batch_run=10,key=jax.random.PRNGKey(0
         keys = jax.random.split(key, num=batch_run) # 10 is reasonnable for 8GB of VRAM
         s = jax.vmap(gg)(keys)
         # extract indicies, non zero values
-        idx = jnp.nonzero(s.outcome)
+        idx = jnp.where(s.outcome == 1)
         if idx[0].size != 0:
             print(f"Runtime {round(time.time()-t,2)}")
             # element with smallest len

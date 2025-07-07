@@ -200,13 +200,13 @@ def benchmark_vmap(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps,stoc
         keys = jax.random.split(key, num=sub_runs) 
         # Deterministic runs
         ssd = jax.vmap(bench_d)(keys)
-        idx = jnp.nonzero(ssd)
+        idx = jnp.where(ssd == 1.0)
         length_d += idx[1].tolist()
         print(f"\tAZ deterministic: {len(idx[1].tolist())} ({time.time()-t})")
         # Stochastic runs
         failed_keys = keys[jnp.nonzero(ssd.sum(axis=1).squeeze(axis=1)-1)]
         sss = jax.vmap(bench_s)(failed_keys)
-        nz = jnp.nonzero(sss)
+        nz = jnp.where(sss == 1.0)
         ids = jnp.unique(nz[0]) # successful runs
         idx_s = [jnp.min(nz[2][nz[0] == i]).tolist() for i in ids] # extracting minimum depth
         length_s += idx_s
@@ -214,13 +214,13 @@ def benchmark_vmap(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps,stoc
         if mcts:
             # mcts t=0 runs
             ssmd = jax.vmap(bench_md)(keys)
-            idx = jnp.nonzero(ssmd)
+            idx = jnp.where(ssmd == 1.0)
             length_md += idx[1].tolist()
             print(f"\tMCTS deterministic: {len(idx[1].tolist())} ({time.time()-t})")
             # mcts t>0 runs
             failed_keys = keys[jnp.nonzero(ssmd.sum(axis=1).squeeze(axis=1)-1)]
             ssms = jax.vmap(bench_ms)(failed_keys)
-            nz = jnp.nonzero(ssms)
+            nz = jnp.where(ssms == 1.0)
             ids = jnp.unique(nz[0]) # successful runs
             idx_s = [jnp.min(nz[2][nz[0] == i]).tolist() for i in ids] # extracting minimum depth
             length_ms += idx_s
@@ -261,7 +261,7 @@ def benchmark(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps,stochasti
         keys = jax.random.split(key, num=sub_runs) 
         # Deterministic runs
         ssd = jax.vmap(bench_d)(keys)
-        idx = jnp.nonzero(ssd)
+        idx = jnp.where(ssd == 1.0)
         length_d += idx[1].tolist()
         print(f"\tAZ deterministic: {len(idx[1].tolist())} ({time.time()-t})")
         # Stochastic runs
@@ -269,7 +269,7 @@ def benchmark(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps,stochasti
         j = 0
         for k in failed_keys:
             ss = bench_s(k)
-            nz = jnp.nonzero(ss)
+            nz = jnp.where(ss == 1.0)
             if len(nz[0])> 0:
                 idx_s = jnp.min(nz[1]).tolist()
                 length_s += [idx_s]
@@ -278,7 +278,7 @@ def benchmark(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps,stochasti
         if mcts:
             # mcts t=0 runs
             ssmd = jax.vmap(bench_md)(keys)
-            idx = jnp.nonzero(ssmd)
+            idx = jnp.where(ssmd == 1.0)
             length_md += idx[1].tolist()
             print(f"\tMCTS deterministic: {len(idx[1].tolist())} ({time.time()-t})")
             # mcts t>0 runs
@@ -286,7 +286,7 @@ def benchmark(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps,stochasti
             j = 0
             for k in failed_keys:
                 sms = bench_ms(key)
-                nz = jnp.nonzero(sms)
+                nz = jnp.where(sms == 1.0)
                 if len(nz[0])>0:
                     idx_s = jnp.min(nz[1]).tolist()
                     length_ms += [idx_s]
@@ -328,14 +328,14 @@ def benchmark_novmap(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps,st
         key, _ = jax.random.split(key)
         # Deterministic runs
         sd = bench_d(key)
-        idx = jnp.nonzero(sd)
+        idx = jnp.where(sd == 1.0)
         if len(idx[1]) > 0:
             length_d += idx[0].tolist()
             print(f"\t✓ AZ deterministic ({time.time()-t})")
         else:
             # Stochastic runs
             ss = bench_s(key)
-            nz = jnp.nonzero(ss)
+            nz = jnp.where(ss == 1.0)
             if len(nz[0])> 0:
                 idx_s = jnp.min(nz[1]).tolist()
                 length_s += [idx_s]
@@ -343,14 +343,14 @@ def benchmark_novmap(depth,runs,key=jax.random.PRNGKey(0),max_steps=max_steps,st
         if mcts:
             # mcts t=0 runs
             smd = bench_md(key)
-            idx = jnp.nonzero(smd)
+            idx = jnp.where(smd == 1.0)
             if len(idx[1]) >0:
                 length_md += idx[0].tolist()
                 print(f"\t✓ MCTS deterministic ({time.time()-t})")
             else:
                 # mcts t>0 runs
                 sms = bench_ms(key)
-                nz = jnp.nonzero(sms)
+                nz = jnp.where(sms == 1.0)
                 if len(nz[0])>0:
                     idx_s = jnp.min(nz[1]).tolist()
                     length_ms += [idx_s]
